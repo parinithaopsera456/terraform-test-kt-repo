@@ -1,0 +1,43 @@
+pipeline {
+
+  agent { node { label 'master' } }
+
+  stages {
+        stage('Deploy web deploy') {
+            when {
+                expression { params.deployment_type == 'web-tier'}
+            }
+            steps {
+                script {
+		            kubernetesDeploy(kubeconfigId: 'mykubeconfig',
+                        configs: 'web-deploy.yaml',
+                        enableConfigSubstitution: true,
+                        //secretNamespace: 'default',
+                        //secretName: 'container-registry',
+                        //dockerCredentials: [
+                        //    [credentialsId: 'acr-secret', url: "\${azurecr_url}"],
+                        //]
+                    )
+		        }
+            }
+        }
+	    stage('Deploy DB') {
+            when {
+                expression { params.deployment_type == 'db-tier'}
+            }
+            steps {
+                script {
+		            kubernetesDeploy(kubeconfigId: 'mykubeconfig',
+                        configs: 'db-deploy.yaml',
+                        enableConfigSubstitution: true,
+                        //secretNamespace: 'default',
+                        //secretName: 'container-registry',
+                        //dockerCredentials: [
+                        //    [credentialsId: 'acr-secret', url: "\${azurecr_url}"],
+                        //]
+                    )
+		        }
+            }
+        }
+	}
+}

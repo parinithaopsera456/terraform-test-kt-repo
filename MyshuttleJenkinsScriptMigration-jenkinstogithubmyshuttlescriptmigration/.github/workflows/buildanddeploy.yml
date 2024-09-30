@@ -1,0 +1,82 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - jenkinstogithubmyshuttlescriptmigration
+
+env:
+  CLUSTER_NAME: jenkinstogithubmig
+  CLUSTER_RESOURCE_GROUP: Githubmigration
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Set up JDK and Maven
+        uses: actions/setup-java@v2
+        with:
+          distribution: 'adopt'
+          java-version: '11'
+
+      - name: Build with Maven
+        run: mvn clean package -Dtest=FaresTest,SimpleTest
+
+      - name: Copy War file
+        run: cp $GITHUB_WORKSPACE/target/myshuttledev.war $GITHUB_WORKSPACE/src
+
+      - name: Login to Azure
+        uses: Azure/login@v1
+        with:
+          creds: '{"clientId":"${{ secrets.CLIENT_ID }}","clientSecret":"${{ secrets.CLIENT_SECRET }}","subscriptionId":"${{ secrets.SUBSCRIPTION_ID }}","tenantId":"${{ secrets.TENANT_ID }}"}'
+
+      - name: Login to Azure Container Registry
+        run: az acr login --username ${{ secrets.AZURE_ACR_USERNAME }} --password ${{ secrets.AZURE_ACR_PASSWORD }} --name ${{ secrets.AZURE_ACR_NAME }}
+        env:
+          AZURE_CR_ENDPOINT: ${{ secrets.AZURE_ACR_ENDPOINT }}
+
+      - name: Build and Push Tomcat Docker Image to Azure ACR
+        run: |
+          docker build $GITHUB_WORKSPACE/src -t ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/tomcat:tomcat-${{ github.run_number }}
+          docker tag ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/tomcat:tomcat-${{ github.run_number }} ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/tomcat:latest
+          docker login ${{ secrets.AZURE_ACR_NAME }}.azurecr.io --username ${{ secrets.AZURE_ACR_USERNAME }} --password ${{ secrets.AZURE_ACR_PASSWORD }}
+          docker push ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/tomcat:tomcat-${{ github.run_number }}
+          docker push ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/tomcat:latest 
+
+      - name: Build and Push Database Docker Image to Azure ACR
+        run: |
+          docker build $GITHUB_WORKSPACE/src/db -t ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/db:db-${{ github.run_number }}
+          docker tag ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/db:db-${{ github.run_number }} ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/db:latest
+          docker login ${{ secrets.AZURE_ACR_NAME }}.azurecr.io --username ${{ secrets.AZURE_ACR_USERNAME }} --password ${{ secrets.AZURE_ACR_PASSWORD }}
+          docker push ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/db:db-${{ github.run_number }}
+          docker push ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/db:latest
+
+      - name: Get K8s context
+        uses: azure/aks-set-context@v3
+        with:
+          cluster-name: ${{ env.CLUSTER_NAME }}
+          resource-group: ${{ env.CLUSTER_RESOURCE_GROUP }}
+
+      - name: Set up Kubernetes environment
+        uses: Azure/setup-kubectl@v1
+        with:
+          kubeconfig: ${{ secrets.KUBECONFIG_CONTENT }}
+
+      - name: Deploy to Kubernetes (Web Tier)
+        run: kubectl apply -f web-deploy.yaml 
+        
+      - name: Deploy to Kubernetes (DB)
+        run: kubectl apply -f db-deploy.yaml 
+        
+
+      
+
+
+  
+  
+       
+      
